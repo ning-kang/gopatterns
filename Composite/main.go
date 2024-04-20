@@ -37,10 +37,6 @@ func (f *File) search(keyword string) {
 	fmt.Printf("Searching for keyword %s in file %s\n", keyword, f.name)
 }
 
-func (f *File) getName() string {
-	return f.name
-}
-
 func main() {
 	file1 := &File{name: "File1"}
 	file2 := &File{name: "File2"}
