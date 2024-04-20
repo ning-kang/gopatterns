@@ -44,6 +44,11 @@ func main() {
 	client := client{}
 	boat := boat{}
 	client.startNavigation(&boat)
+	// An assignment to a variable of interface type is valid if the value being assigned
+	// implements the interface it is assigned to. It implements it if its method set is
+	// a superset of the interface. The method set of pointer types includes methods with
+	// both pointer and non-pointer receiver. The method set of non-pointer types only
+	// includes methods with non-pointer receiver.
 
 	car := car{}
 	carAdapter := carAdapter{
