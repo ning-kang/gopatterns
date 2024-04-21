@@ -2,125 +2,160 @@ package main
 
 import "fmt"
 
-type Position struct {
-	X, Y int
+var overdraftLimit = -500
+
+type BankAccount struct {
+	balance int
 }
 
-type Hero struct {
-	faceTo   string
-	position Position
+func (b *BankAccount) Deposit(amount int) {
+	b.balance += amount
+	fmt.Println("Deposited", amount, "\b, balance is now", b.balance)
 }
 
-func (h *Hero) Turn(direction string) {
-	h.faceTo = direction
-}
-
-func (h *Hero) Move(distance int) {
-	switch h.faceTo {
-	case "East":
-		h.position.X += distance
-	case "West":
-		h.position.X -= distance
-	case "North":
-		h.position.Y += distance
-	case "South":
-		h.position.Y -= distance
+func (b *BankAccount) Withdraw(amount int) bool {
+	if b.balance-amount >= overdraftLimit {
+		b.balance -= amount
+		fmt.Println("Withdrew", amount, "\b, balance is now", b.balance)
+		return true
 	}
+	return false
 }
 
-// command pattern
 type Command interface {
 	Call()
 	Undo()
+	Succeeded() bool
+	SetSucceeded(value bool)
 }
 
-type Direction int
+type Action int
 
 const (
-	East Direction = iota
-	West
-	North
-	South
+	Deposit Action = iota
+	Withdraw
 )
 
-type HeroTurnCommand struct {
-	hero              *Hero
-	previousDirection string
-	direction         Direction
+// command as struct
+type BankAccountCommand struct {
+	account   *BankAccount
+	action    Action
+	amount    int
+	succeeded bool
 }
 
-type HeroMoveCommand struct {
-	hero     *Hero
-	distance int
+func NewBankAccountCommand(account *BankAccount, action Action, amount int) *BankAccountCommand {
+	return &BankAccountCommand{account: account, action: action, amount: amount}
 }
 
-func NewHeroTurnCommand(hero *Hero, previousDirection string, direction Direction) *HeroTurnCommand {
-	return &HeroTurnCommand{hero: hero, previousDirection: previousDirection, direction: direction}
-}
-
-func NewHeroMoveCommand(hero *Hero, distance int) *HeroMoveCommand {
-	return &HeroMoveCommand{hero: hero, distance: distance}
-}
-
-func (h *HeroTurnCommand) Call() {
-	h.previousDirection = h.hero.faceTo
-	switch h.direction {
-	case East:
-		h.hero.faceTo = "East"
-	case West:
-		h.hero.faceTo = "West"
-	case North:
-		h.hero.faceTo = "North"
-	case South:
-		h.hero.faceTo = "South"
+func (b *BankAccountCommand) Call() {
+	switch b.action {
+	case Deposit:
+		b.account.Deposit(b.amount)
+		b.succeeded = true
+	case Withdraw:
+		b.succeeded = b.account.Withdraw(b.amount)
 	}
 }
 
-func (h *HeroTurnCommand) Undo() {
-	h.hero.faceTo = h.previousDirection
-}
-
-func (h *HeroMoveCommand) Call() {
-	switch h.hero.faceTo {
-	case "East":
-		h.hero.position.X += h.distance
-	case "West":
-		h.hero.position.X -= h.distance
-	case "North":
-		h.hero.position.Y += h.distance
-	case "South":
-		h.hero.position.Y -= h.distance
+func (b *BankAccountCommand) Undo() {
+	if !b.succeeded {
+		return
+	}
+	switch b.action {
+	case Deposit:
+		b.account.Withdraw(b.amount)
+	case Withdraw:
+		b.account.Deposit(b.amount)
 	}
 }
 
-func (h *HeroMoveCommand) Undo() {
-	switch h.hero.faceTo {
-	case "East":
-		h.hero.position.X -= h.distance
-	case "West":
-		h.hero.position.X += h.distance
-	case "North":
-		h.hero.position.Y -= h.distance
-	case "South":
-		h.hero.position.Y += h.distance
+func (b *BankAccountCommand) Succeeded() bool {
+	return b.succeeded
+}
+
+func (b *BankAccountCommand) SetSucceeded(value bool) {
+	b.succeeded = value
+}
+
+// transaction
+type CompositeBankAccountCommand struct {
+	commands []Command
+}
+
+func (c *CompositeBankAccountCommand) Call() {
+	for _, cmd := range c.commands {
+		cmd.Call()
+	}
+}
+
+// Undo commands have to take place in the reverse order
+func (c *CompositeBankAccountCommand) Undo() {
+	for idx := range c.commands {
+		c.commands[len(c.commands)-idx-1].Undo()
+	}
+}
+
+// a transaction succeeds only when all sub commands succeeded
+func (c *CompositeBankAccountCommand) Succeeded() bool {
+	for _, cmd := range c.commands {
+		if !cmd.Succeeded() {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *CompositeBankAccountCommand) SetSucceeded(value bool) {
+	for _, cmd := range c.commands {
+		cmd.SetSucceeded(value)
+	}
+}
+
+// aggregate
+type MoneyTransferCommand struct {
+	CompositeBankAccountCommand
+	from, to *BankAccount
+	amount   int
+}
+
+func NewMoneyTransferCommand(from *BankAccount, to *BankAccount, amount int) *MoneyTransferCommand {
+	c := &MoneyTransferCommand{from: from, to: to, amount: amount}
+	// initiate aggregated types
+	c.commands = append(c.commands, NewBankAccountCommand(from, Withdraw, amount))
+	c.commands = append(c.commands, NewBankAccountCommand(to, Deposit, amount))
+	return c
+}
+
+// transaction call: if one command fails, stop running the subsequent commands
+func (m *MoneyTransferCommand) Call() {
+	ok := true
+	for _, cmd := range m.commands {
+		if ok {
+			cmd.Call()
+			ok = cmd.Succeeded()
+		} else {
+			cmd.SetSucceeded(false)
+		}
 	}
 }
 
 func main() {
-	hero := Hero{}
-	tcmd1 := NewHeroTurnCommand(&hero, hero.faceTo, West)
-	tcmd2 := NewHeroTurnCommand(&hero, hero.faceTo, West)
-	mcmd := NewHeroMoveCommand(&hero, 100)
+	ba := BankAccount{}
+	cmd := NewBankAccountCommand(&ba, Deposit, 100)
+	cmd.Call()
+	fmt.Println(ba)
+	cmd2 := NewBankAccountCommand(&ba, Withdraw, 25)
+	cmd2.Call()
+	fmt.Println(ba)
+	cmd2.Undo()
+	fmt.Println(ba)
 
-	tcmd1.Call()
-	fmt.Printf("Hero is at %v facing to %s\n", hero.position, hero.faceTo)
-	tcmd2.Call()
-	fmt.Printf("Hero is at %v facing to %s\n", hero.position, hero.faceTo)
-	tcmd2.Undo()
-	fmt.Printf("Hero is at %v facing to %s\n", hero.position, hero.faceTo)
+	from := BankAccount{100}
+	to := BankAccount{0}
+	mtc := NewMoneyTransferCommand(&from, &to, 25)
+	fmt.Println(from, to)
 
-	mcmd.Call()
-	fmt.Printf("Hero is at %v facing to %s\n", hero.position, hero.faceTo)
-	mcmd.Call()
-	fmt.Printf("Hero is at %v facing to %s\n", hero.position, hero.faceTo)
+	mtc.Undo()
+	fmt.Println(from, to)
 }
