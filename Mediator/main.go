@@ -10,6 +10,7 @@ const (
 	hunter  class = "hunter"
 )
 
+// Component. Contains a reference to the mediator
 type Player struct {
 	name  string
 	class class
@@ -40,6 +41,8 @@ func (p *Player) Wisper(dest Player, message string) {
 	dest.Receive(*p, message)
 }
 
+// Mediator
+// Contains a slice of *components
 type Game struct {
 	players []*Player
 }
